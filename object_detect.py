@@ -1,7 +1,12 @@
+import os
+import argparse
+
 import cv2
-import tensorflow as tf
 import numpy as np
 from PIL import ImageFont, ImageDraw, Image
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # or any {'0', '1', '2'}
+import tensorflow as tf
 
 label2string = \
 {
@@ -92,8 +97,14 @@ def LoadTFLiteInterpreter(model_path):
     interpreter.allocate_tensors()
     return interpreter
 
-def GetInputImage():
-    return  cv2.imread('hqdefault.jpg')
+def GetInputImage(path):
+    if None == path:
+        cap = cv2.VideoCapture(0)
+        ret, frame = cap.read()
+        cv2.imwrite('input.jpg', frame)
+        return frame
+    else:
+        return  cv2.imread(path)
 
 def PreProcess(interpreter, input_img):
     img = cv2.cvtColor(input_img, cv2.COLOR_BGR2RGB)
@@ -134,8 +145,8 @@ def PostProcessByArduino(interpreter, input_image):
 
 def PostProcess(interpreter, input_image):
     output_details =interpreter.get_output_details()
-    print(output_details)
     boxes = interpreter.get_tensor(output_details[0]['index'])
+
     print("Box:")
     print(boxes)
     print("box shape")
@@ -162,7 +173,7 @@ def PostProcess(interpreter, input_image):
     font = ImageFont.truetype(fontPath, 192)
 
     for i in range(boxes.shape[1]):
-        if scores[0, i] > 0.7:
+        if scores[0, i] > 0.55:
             box = boxes[0, i, :]
             x0 = int(box[1] * input_image.shape[1])
             y0 = int(box[0] * input_image.shape[0])
@@ -195,17 +206,29 @@ def Inference(interpreter):
     interpreter.invoke()
 
 
+def InitArgParser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", "-m", help="File path of tflite model", default="detect.tflite")
 
-def main(model_path):
-    interpreter = LoadTFLiteInterpreter(model_path)
+    parser.add_argument("--input", "-i", help="Input file jpg or video, default input data from camera")
+    parser.add_argument("--target", "-t", help="Hardware target for post-process, 0:x86(default), 1:arduino", type=int, choices=[0,1], default=0)
+    return parser.parse_args()
 
-    input_img = GetInputImage();
+
+def main(args):
+    interpreter = LoadTFLiteInterpreter(args.model)
+
+    input_img = GetInputImage(args.input);
     PreProcess(interpreter, input_img)
     Inference(interpreter)
-    PostProcessByArduino(interpreter, input_img)
 
-
+    if 0 == args.target:
+        PostProcess(interpreter, input_img)
+    else:
+        PostProcessByArduino(interpreter, input_img)
 
 if __name__ == "__main__":
-    model_path = "detect.tflite"
-    main(model_path)
+    args = InitArgParser()
+
+    main(args)
+
