@@ -1,6 +1,6 @@
 import os
 import argparse
-
+import time
 import cv2
 import numpy as np
 from PIL import ImageFont, ImageDraw, Image
@@ -8,6 +8,9 @@ import serial
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # or any {'0', '1', '2'}
 import tensorflow as tf
+
+MODEL_INPUT_W = 300
+MODEL_INPUT_H = 300
 
 port = "/dev/ttyUSB1"
 
@@ -110,7 +113,7 @@ def GetInputImage(path, cap):
 
 def PreProcess(interpreter, input_img):
     img = cv2.cvtColor(input_img, cv2.COLOR_BGR2RGB)
-    img = cv2.resize(img, (300, 300))
+    img = cv2.resize(img, (MODEL_INPUT_W, MODEL_INPUT_H))
     img = img.reshape(1, img.shape[0], img.shape[1], img.shape[2]) # (1, 300, 300, 3)
     img = img.astype(np.uint8)
 
@@ -123,7 +126,7 @@ def BBX2Str(bbx):
     return _str.replace('[','').replace(']','')
 
 
-ser = serial.Serial(port,2000000, timeout=20)
+ser = serial.Serial(port, 38400, timeout=20)
 def SendStrToArduino(data):
     ## TODO modify port
 
@@ -142,8 +145,6 @@ def SendStrToArduino(data):
     return out_put
 
 
-
-
 def PostProcessByArduino(interpreter, input_image):
     BBX_NUM_IDX = 3
     CLS_IDX = 1
@@ -159,10 +160,13 @@ def PostProcessByArduino(interpreter, input_image):
     #remove last five bbx
     all_bbx = np.delete(all_bbx, [5,6,7,8,9], 0)
 
+    #all_bbx_back = SendStrToArduino(all_bbx)
+    print(all_bbx)
     all_bbx_back = SendStrToArduino(all_bbx)
     ## According to the Andes nms result draw the box
 
     for bbx in all_bbx_back:
+        print(bbx)
         label = bbx[0]
         box = bbx[2:]
         score = bbx[1]
@@ -176,7 +180,7 @@ def PostProcessByArduino(interpreter, input_image):
         cv2.rectangle(input_image, (x0, y0), (x1, y1), (255, 0, 0), 2)
         cv2.rectangle(input_image, (x0, y0), (x0 + 100, y0 - 30), (255, 0, 0), -1)
 
-        print("tflite " + label2string[int(label)])
+        #print("tflite " + label2string[int(label)])
 
         cv2.putText(input_image,
                 label2string[int(label)],
@@ -261,8 +265,15 @@ def main(args):
     interpreter = LoadTFLiteInterpreter(args.model)
 
     cap = cv2.VideoCapture(0)
+    fourcc = cv2.VideoWriter_fourcc(*'MP4V')
+    out = cv2.VideoWriter('output.mp4', fourcc, 5, (640, 480))
 
+    last_time = time.time()
     while cap.isOpened():
+        diff = time.time() - last_time
+        last_time = time.time()
+        print("fps:", 1.0/ diff)
+
         input_img = GetInputImage(args.input, cap);
         PreProcess(interpreter, input_img)
         Inference(interpreter)
@@ -274,10 +285,12 @@ def main(args):
 
         cv2.imwrite('output.jpg', output_image)
         cv2.imshow('frame', output_image)
-
+        out.write(output_image)
         if cv2.waitKey(1) & 0xFF == ord('q'):
+            print(output_image.shape)
             break
     cap.release()
+    out.release()
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
