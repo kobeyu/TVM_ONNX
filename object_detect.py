@@ -9,6 +9,8 @@ import serial
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # or any {'0', '1', '2'}
 import tensorflow as tf
 
+port = "/dev/ttyUSB1"
+
 label2string = \
 {
     0:   "person",
@@ -98,9 +100,8 @@ def LoadTFLiteInterpreter(model_path):
     interpreter.allocate_tensors()
     return interpreter
 
-def GetInputImage(path):
+def GetInputImage(path, cap):
     if None == path:
-        cap = cv2.VideoCapture(0)
         ret, frame = cap.read()
         cv2.imwrite('input.jpg', frame)
         return frame
@@ -122,18 +123,17 @@ def BBX2Str(bbx):
     return _str.replace('[','').replace(']','')
 
 
+ser = serial.Serial(port,2000000, timeout=20)
 def SendStrToArduino(data):
-    ## TODO modify port 
-    port = "/dev/ttyUSB1"
-    ser = serial.Serial(port,9600, timeout=20)
+    ## TODO modify port
 
     dtype = data.dtype
     shape = data.shape
     # serialize bbx data and send to Andes board
     byte_data = data.tobytes()
-    send_size = ser.write(byte_data) 
+    send_size = ser.write(byte_data)
 
-    # Receive data from Andes board 
+    # Receive data from Andes board
     redeive_data = ser.read(send_size)
     assert len(redeive_data) == send_size , "Receive_data size should equal to send_data size"
 
@@ -155,10 +155,11 @@ def PostProcessByArduino(interpreter, input_image):
     _class = interpreter.get_tensor(output_details[CLS_IDX]['index'])
     _score = interpreter.get_tensor(output_details[SCR_IDX]['index'])
     _bbx = interpreter.get_tensor(output_details[BBX_IDX]['index'])
-
     all_bbx = np.concatenate((_class.reshape((bbx_num, 1)), _score.reshape((bbx_num, 1)), _bbx.reshape((bbx_num, 4))), axis=1)
-    all_bbx_back = SendStrToArduino(all_bbx)
+    #remove last five bbx
+    all_bbx = np.delete(all_bbx, [5,6,7,8,9], 0)
 
+    all_bbx_back = SendStrToArduino(all_bbx)
     ## According to the Andes nms result draw the box
 
     for bbx in all_bbx_back:
@@ -184,8 +185,7 @@ def PostProcessByArduino(interpreter, input_image):
                 1,
                 (255, 255, 255),
                 2)
-    cv2.imwrite('arduino_output.jpg', input_image)
-
+    return input_image
 
 
 def PostProcess(interpreter, input_image):
@@ -241,11 +241,7 @@ def PostProcess(interpreter, input_image):
         # if tvm_output_score[0, i] > 0.7:
         # 	print("tvm " + label2string[int(tvm_output_label[0, i])])
 
-    cv2.imwrite('output.jpg', input_image)
-    #cv2.imshow('image', input_image)
-    #cv2.waitKey(0)
-    #cv2.destroyAllWindows()
-
+    return input_image
 
 
 def Inference(interpreter):
@@ -264,14 +260,25 @@ def InitArgParser():
 def main(args):
     interpreter = LoadTFLiteInterpreter(args.model)
 
-    input_img = GetInputImage(args.input);
-    PreProcess(interpreter, input_img)
-    Inference(interpreter)
+    cap = cv2.VideoCapture(0)
 
-    if 0 == args.target:
-        PostProcess(interpreter, input_img)
-    else:
-        PostProcessByArduino(interpreter, input_img)
+    while cap.isOpened():
+        input_img = GetInputImage(args.input, cap);
+        PreProcess(interpreter, input_img)
+        Inference(interpreter)
+
+        if 0 == args.target:
+            output_image = PostProcess(interpreter, input_img)
+        else:
+            output_image = PostProcessByArduino(interpreter, input_img)
+
+        cv2.imwrite('output.jpg', output_image)
+        cv2.imshow('frame', output_image)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    cap.release()
+    cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     args = InitArgParser()
