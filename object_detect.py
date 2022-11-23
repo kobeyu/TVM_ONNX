@@ -126,7 +126,6 @@ def BBX2Str(bbx):
     return _str.replace('[','').replace(']','')
 
 
-ser = serial.Serial(port, 38400, timeout=20)
 def SendStrToArduino(data):
     ## TODO modify port
 
@@ -145,7 +144,7 @@ def SendStrToArduino(data):
     return out_put
 
 
-def PostProcessByArduino(interpreter, input_image):
+def PostProcess(interpreter, input_image, quan=True):
     BBX_NUM_IDX = 3
     CLS_IDX = 1
     SCR_IDX = 2
@@ -153,29 +152,45 @@ def PostProcessByArduino(interpreter, input_image):
     output_details =interpreter.get_output_details()
 
     bbx_num = int(interpreter.get_tensor(output_details[BBX_NUM_IDX]['index'])[0])
+
     _class = interpreter.get_tensor(output_details[CLS_IDX]['index'])
     _score = interpreter.get_tensor(output_details[SCR_IDX]['index'])
     _bbx = interpreter.get_tensor(output_details[BBX_IDX]['index'])
+
+    if quan:
+        _class = _class.astype(int)
+        _score = (_score * 255).astype(int)
+        image_xy = [ input_image.shape[0], input_image.shape[1], input_image.shape[0], input_image.shape[1]]
+        _bbx = (_bbx[::4] * image_xy).astype(int)
     all_bbx = np.concatenate((_class.reshape((bbx_num, 1)), _score.reshape((bbx_num, 1)), _bbx.reshape((bbx_num, 4))), axis=1)
+
     #remove last five bbx
     all_bbx = np.delete(all_bbx, [5,6,7,8,9], 0)
 
-    #all_bbx_back = SendStrToArduino(all_bbx)
-    print(all_bbx)
-    all_bbx_back = SendStrToArduino(all_bbx)
-    ## According to the Andes nms result draw the box
+    if 1 == args.target:
+        all_bbx_back = SendStrToArduino(all_bbx)
+    else:
+        all_bbx_back = all_bbx
+
+
+    score_th = 125 if quan else 0.5
 
     for bbx in all_bbx_back:
-        print(bbx)
         label = bbx[0]
         box = bbx[2:]
         score = bbx[1]
-        if(score == -1):
+        if(score == -1 or score < score_th):
             continue
-        x0 = int(box[1] * input_image.shape[1])
-        y0 = int(box[0] * input_image.shape[0])
-        x1 = int(box[3] * input_image.shape[1])
-        y1 = int(box[2] * input_image.shape[0])
+        if quan :
+            x0 = box[1]
+            y0 = box[0]
+            x1 = box[3]
+            y1 = box[2]
+        else:
+            x0 = int(box[1] * input_image.shape[1])
+            y0 = int(box[0] * input_image.shape[0])
+            x1 = int(box[3] * input_image.shape[1])
+            y1 = int(box[2] * input_image.shape[0])
 
         cv2.rectangle(input_image, (x0, y0), (x1, y1), (255, 0, 0), 2)
         cv2.rectangle(input_image, (x0, y0), (x0 + 100, y0 - 30), (255, 0, 0), -1)
@@ -189,62 +204,6 @@ def PostProcessByArduino(interpreter, input_image):
                 1,
                 (255, 255, 255),
                 2)
-    return input_image
-
-
-def PostProcess(interpreter, input_image):
-    output_details =interpreter.get_output_details()
-    boxes = interpreter.get_tensor(output_details[0]['index'])
-
-    print("Box:")
-    print(boxes)
-    print("box shape")
-    print(boxes.shape)
-    print(type(boxes))
-    labels = interpreter.get_tensor(output_details[1]['index'])
-    print("Label:")
-    print(labels)
-    print(type(labels))
-    print(labels.shape)
-
-    scores = interpreter.get_tensor(output_details[2]['index'])
-    print("score: ")
-    print(scores)
-    print(scores.shape)
-    print(type(scores))
-
-
-    num = interpreter.get_tensor(output_details[3]['index'])
-    print("num:")
-    print(num)
-
-    fontPath = "./arial.ttf"
-    font = ImageFont.truetype(fontPath, 192)
-
-    for i in range(boxes.shape[1]):
-        if scores[0, i] > 0.55:
-            print("OK BOX",i)
-            box = boxes[0, i, :]
-            x0 = int(box[1] * input_image.shape[1])
-            y0 = int(box[0] * input_image.shape[0])
-            x1 = int(box[3] * input_image.shape[1])
-            y1 = int(box[2] * input_image.shape[0])
-            box = box.astype(np.int)
-            cv2.rectangle(input_image, (x0, y0), (x1, y1), (255, 0, 0), 2)
-            cv2.rectangle(input_image, (x0, y0), (x0 + 100, y0 - 30), (255, 0, 0), -1)
-
-            print("tflite " + label2string[int(labels[0, i])])
-
-            cv2.putText(input_image,
-                label2string[int(labels[0, i])],
-                (x0, y0),
-                cv2.FONT_HERSHEY_COMPLEX_SMALL,
-                1,
-                (255, 255, 255),
-                2)
-        # if tvm_output_score[0, i] > 0.7:
-        # 	print("tvm " + label2string[int(tvm_output_label[0, i])])
-
     return input_image
 
 
@@ -262,13 +221,19 @@ def InitArgParser():
 
 
 def main(args):
-    interpreter = LoadTFLiteInterpreter(args.model)
+    global ser
 
+    interpreter = LoadTFLiteInterpreter(args.model)
     cap = cv2.VideoCapture(0)
     fourcc = cv2.VideoWriter_fourcc(*'MP4V')
     out = cv2.VideoWriter('output.mp4', fourcc, 5, (640, 480))
 
     last_time = time.time()
+
+    if 1 == args.target:
+        ser = serial.Serial(port, 38400, timeout=20)
+
+
     while cap.isOpened():
         diff = time.time() - last_time
         last_time = time.time()
@@ -278,10 +243,7 @@ def main(args):
         PreProcess(interpreter, input_img)
         Inference(interpreter)
 
-        if 0 == args.target:
-            output_image = PostProcess(interpreter, input_img)
-        else:
-            output_image = PostProcessByArduino(interpreter, input_img)
+        output_image = PostProcess(interpreter, input_img)
 
         cv2.imwrite('output.jpg', output_image)
         cv2.imshow('frame', output_image)
