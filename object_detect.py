@@ -213,7 +213,7 @@ def Inference(interpreter):
 
 def InitArgParser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", "-m", help="File path of tflite model", default="detect.tflite")
+    parser.add_argument("--model", "-m", help="File path of tflite model", default="model/detect.tflite")
 
     parser.add_argument("--input", "-i", help="Input file jpg or video, default input data from camera")
     parser.add_argument("--target", "-t", help="Hardware target for post-process, 0:x86(default), 1:arduino", type=int, choices=[0,1], default=0)
