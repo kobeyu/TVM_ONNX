@@ -103,20 +103,16 @@ def LoadTFLiteInterpreter(model_path):
     interpreter.allocate_tensors()
     return interpreter
 
-def GetInputImage(path, cap):
-    if None == path:
+def GetImageFromCamera(cap):
         ret, frame = cap.read()
-        cv2.imwrite('input.jpg', frame)
-        return frame
-    else:
-        return  cv2.imread(path)
+        cv2.imwrite('camera.jpg', frame)
+        return  frame
 
 def PreProcess(interpreter, input_img):
     img = cv2.cvtColor(input_img, cv2.COLOR_BGR2RGB)
     img = cv2.resize(img, (MODEL_INPUT_W, MODEL_INPUT_H))
     img = img.reshape(1, img.shape[0], img.shape[1], img.shape[2]) # (1, 300, 300, 3)
     img = img.astype(np.uint8)
-
 
     input_details = interpreter.get_input_details()
     interpreter.set_tensor(input_details[0]['index'], img)
@@ -207,53 +203,67 @@ def PostProcess(interpreter, input_image, quan=True):
     return input_image
 
 
-def Inference(interpreter):
+def e2e(interpreter, in_img, start_time, quan, wait_time = 0, video_wtr=None):
+    PreProcess(interpreter, in_img)
     interpreter.invoke()
+    out_img = PostProcess(interpreter, in_img, quan)
+    ShowAndSaveResult(out_img, video_wtr)
 
+    if cv2.waitKey(wait_time) & 0xFF == ord('q'):
+        return 0
+    return time.time() - start_time
 
 def InitArgParser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", "-m", help="File path of tflite model", default="model/detect.tflite")
-
-    parser.add_argument("--input", "-i", help="Input file jpg or video, default input data from camera")
+    parser.add_argument("--input", "-i", help="path to jpg file,default input data from camera")
+    parser.add_argument("--quan", "-q", action="store_true", help="Quantize model output")
     parser.add_argument("--target", "-t", help="Hardware target for post-process, 0:x86(default), 1:arduino", type=int, choices=[0,1], default=0)
     return parser.parse_args()
 
 
-def main(args):
-    global ser
-
-    interpreter = LoadTFLiteInterpreter(args.model)
+def GetCameraSource(ofile="output.mp4", width=640, heigh=480):
     cap = cv2.VideoCapture(0)
     fourcc = cv2.VideoWriter_fourcc(*'MP4V')
-    out = cv2.VideoWriter('output.mp4', fourcc, 5, (640, 480))
+    video_wtr = cv2.VideoWriter(ofile, fourcc, 5, (width, heigh))
+    return cap, video_wtr
 
-    last_time = time.time()
+def ShowAndSaveResult(output_image, video_wtr=None):
+    cv2.imwrite('output.jpg', output_image)
+    cv2.imshow('frame', output_image)
+    if video_wtr:
+        video_wtr.write(output_image)
+
+
+def main(args):
+    global ser
+    interpreter = LoadTFLiteInterpreter(args.model)
 
     if 1 == args.target:
         ser = serial.Serial(port, 38400, timeout=20)
 
+    if args.input:
+        print("source data from jpg file")
+        in_img = cv2.imread(args.input)
+        e2e(interpreter, in_img, time.time(), args.quan)
 
-    while cap.isOpened():
-        diff = time.time() - last_time
+    else:
+        print("source data from camera")
+        cap, video_wtr = GetCameraSource()
         last_time = time.time()
-        print("fps:", 1.0/ diff)
+        while cap.isOpened():
+            in_img = GetImageFromCamera(cap);
+            diff = e2e(interpreter, in_img, time.time(), args.quan, 1, video_wtr)
+            if not diff:
+                break;
 
-        input_img = GetInputImage(args.input, cap);
-        PreProcess(interpreter, input_img)
-        Inference(interpreter)
+            print("fps:", 1.0/ diff)
 
-        output_image = PostProcess(interpreter, input_img)
-
-        cv2.imwrite('output.jpg', output_image)
-        cv2.imshow('frame', output_image)
-        out.write(output_image)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            print(output_image.shape)
-            break
-    cap.release()
-    out.release()
+    if not args.input:
+        cap.release()
+        video_wtr.release()
     cv2.destroyAllWindows()
+
 
 if __name__ == "__main__":
     args = InitArgParser()
