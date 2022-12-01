@@ -154,10 +154,11 @@ def PostProcess(interpreter, input_image, quan=True):
     _bbx = interpreter.get_tensor(output_details[BBX_IDX]['index'])
 
     if quan:
-        _class = _class.astype(int)
-        _score = (_score * 255).astype(int)
+        _class = _class.astype(np.int32)
+        _score = (_score * 255).astype(np.int32)
         image_xy = [ input_image.shape[0], input_image.shape[1], input_image.shape[0], input_image.shape[1]]
-        _bbx = (_bbx[::4] * image_xy).astype(int)
+        _bbx = (_bbx[::4] * image_xy).astype(np.int32)
+
     all_bbx = np.concatenate((_class.reshape((bbx_num, 1)), _score.reshape((bbx_num, 1)), _bbx.reshape((bbx_num, 4))), axis=1)
 
     #remove last five bbx
