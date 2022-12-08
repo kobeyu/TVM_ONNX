@@ -159,17 +159,17 @@ def PostProcess(interpreter, input_image, quan=True):
         image_xy = [ input_image.shape[0], input_image.shape[1], input_image.shape[0], input_image.shape[1]]
         _bbx = (_bbx[::4] * image_xy).astype(np.int32)
 
-    all_bbx = np.concatenate((_class.reshape((bbx_num, 1)), _score.reshape((bbx_num, 1)), _bbx.reshape((bbx_num, 4))), axis=1)
+    ori_all_bbx = np.concatenate((_class.reshape((bbx_num, 1)), _score.reshape((bbx_num, 1)), _bbx.reshape((bbx_num, 4))), axis=1)
 
-    #remove last five bbx
-    all_bbx = np.delete(all_bbx, [5,6,7,8,9], 0)
+    #apply relu operation, reduce to 8 bbx and transpose bbx data.
+    all_bbx = np.maximum(0, np.delete(ori_all_bbx, [8,9], 0)).transpose()
 
     if 1 == args.target:
         all_bbx_back = SendStrToArduino(all_bbx)
     else:
-        all_bbx_back = all_bbx
+        all_bbx_back = all_bbx.transpose()
 
-
+    all_bbx_back.transpose()
     score_th = 125 if quan else 0.5
 
     for bbx in all_bbx_back:
