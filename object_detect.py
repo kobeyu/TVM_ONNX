@@ -169,7 +169,7 @@ def PostProcess(interpreter, input_image, quan=True):
     else:
         all_bbx_back = all_bbx.transpose()
 
-    all_bbx_back.transpose()
+    all_bbx_back = all_bbx_back.transpose()
     score_th = 125 if quan else 0.5
 
     for bbx in all_bbx_back:
