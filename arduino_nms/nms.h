@@ -9,4 +9,9 @@
 #define GET_BBX_LEFT(ptr, idx) (int8_t)*((int8_t*)(ptr) + (idx) + NUMBER_OF_BBX * 4)
 #define GET_BBX_RIGHT(ptr, idx) (int8_t)*((int8_t*)(ptr) + (idx) + NUMBER_OF_BBX * 5)
 
+#define GET_BBX_TOP_PTR(ptr, idx) ((int8_t*)(ptr) + (idx) + NUMBER_OF_BBX * 2)
+#define GET_BBX_BOTTOM_PTR(ptr, idx) ((int8_t*)(ptr) + (idx) + NUMBER_OF_BBX * 3)
+#define GET_BBX_LEFT_PTR(ptr, idx) ((int8_t*)(ptr) + (idx) + NUMBER_OF_BBX * 4)
+#define GET_BBX_RIGHT_PTR(ptr, idx) ((int8_t*)(ptr) + (idx) + NUMBER_OF_BBX * 5)
+
 int nms(int8_t *ptr, int valid_count);
