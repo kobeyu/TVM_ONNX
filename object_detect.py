@@ -152,24 +152,26 @@ def PostProcess(interpreter, input_image, quan=True):
     _class = interpreter.get_tensor(output_details[CLS_IDX]['index'])
     _score = interpreter.get_tensor(output_details[SCR_IDX]['index'])
     _bbx = interpreter.get_tensor(output_details[BBX_IDX]['index'])
+    fl_all_bbx = np.concatenate((_class.reshape((bbx_num, 1)), _score.reshape((bbx_num, 1)), _bbx.reshape((bbx_num, 4))), axis=1)
 
+    scale = 5
     if quan:
         _class = _class.astype(np.int32)
         _score = (_score * 255).astype(np.int32)
-        image_xy = [ input_image.shape[0], input_image.shape[1], input_image.shape[0], input_image.shape[1]]
-        _bbx = (_bbx[::4] * image_xy).astype(np.int32)
-
+        image_xy = np.array([ input_image.shape[0], input_image.shape[1], input_image.shape[0], input_image.shape[1]]) / scale
+        _bbx = (_bbx[::4] * image_xy).astype(np.int8)
     ori_all_bbx = np.concatenate((_class.reshape((bbx_num, 1)), _score.reshape((bbx_num, 1)), _bbx.reshape((bbx_num, 4))), axis=1)
+
 
     #apply relu operation, reduce to 8 bbx and transpose bbx data.
     all_bbx = np.maximum(0, np.delete(ori_all_bbx, [8,9], 0)).transpose()
 
     if 1 == args.target:
         all_bbx_back = SendStrToArduino(all_bbx)
+        all_bbx_back = all_bbx_back.transpose()
     else:
         all_bbx_back = all_bbx.transpose()
 
-    all_bbx_back = all_bbx_back.transpose()
     score_th = 125 if quan else 0.5
 
     for bbx in all_bbx_back:
@@ -179,6 +181,7 @@ def PostProcess(interpreter, input_image, quan=True):
         if(score == -1 or score < score_th):
             continue
         if quan :
+            box = box * scale
             x0 = box[1]
             y0 = box[0]
             x1 = box[3]
