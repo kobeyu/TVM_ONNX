@@ -130,7 +130,6 @@ def SendStrToArduino(data):
     # serialize bbx data and send to Andes board
     byte_data = data.tobytes()
     send_size = ser.write(byte_data)
-
     # Receive data from Andes board
     redeive_data = ser.read(send_size)
     assert len(redeive_data) == send_size , "Receive_data size should equal to send_data size"
@@ -154,10 +153,10 @@ def PostProcess(interpreter, input_image, quan=True):
     _bbx = interpreter.get_tensor(output_details[BBX_IDX]['index'])
     fl_all_bbx = np.concatenate((_class.reshape((bbx_num, 1)), _score.reshape((bbx_num, 1)), _bbx.reshape((bbx_num, 4))), axis=1)
 
-    scale = 5
+    scale = 3
     if quan:
-        _class = _class.astype(np.int32)
-        _score = (_score * 255).astype(np.int32)
+        _class = _class.astype(np.int8)
+        _score = (_score * 127).astype(np.int8)
         image_xy = np.array([ input_image.shape[0], input_image.shape[1], input_image.shape[0], input_image.shape[1]]) / scale
         _bbx = (_bbx[::4] * image_xy).astype(np.int8)
     ori_all_bbx = np.concatenate((_class.reshape((bbx_num, 1)), _score.reshape((bbx_num, 1)), _bbx.reshape((bbx_num, 4))), axis=1)
@@ -172,15 +171,17 @@ def PostProcess(interpreter, input_image, quan=True):
     else:
         all_bbx_back = all_bbx.transpose()
 
-    score_th = 125 if quan else 0.5
 
+    score_th = 64 if quan else 0.5
+    print(all_bbx_back)
     for bbx in all_bbx_back:
         label = bbx[0]
         box = bbx[2:]
         score = bbx[1]
-        if(score == -1 or score < score_th):
+        if(score == -1 ):
             continue
         if quan :
+            box = box.astype(np.int32)
             box = box * scale
             x0 = box[1]
             y0 = box[0]
@@ -213,8 +214,8 @@ def e2e(interpreter, in_img, start_time, quan, wait_time = 0, video_wtr=None):
     out_img = PostProcess(interpreter, in_img, quan)
     ShowAndSaveResult(out_img, video_wtr)
 
-    if cv2.waitKey(wait_time) & 0xFF == ord('q'):
-        return 0
+    # if cv2.waitKey(wait_time) & 0xFF == ord('q'):
+    #     return 0
     return time.time() - start_time
 
 def InitArgParser():
@@ -234,7 +235,7 @@ def GetCameraSource(ofile="output.mp4", width=640, heigh=480):
 
 def ShowAndSaveResult(output_image, video_wtr=None):
     cv2.imwrite('output.jpg', output_image)
-    cv2.imshow('frame', output_image)
+    # cv2.imshow('frame', output_image)
     if video_wtr:
         video_wtr.write(output_image)
 
@@ -244,7 +245,7 @@ def main(args):
     interpreter = LoadTFLiteInterpreter(args.model)
 
     if 1 == args.target:
-        ser = serial.Serial(port, 38400, timeout=20)
+        ser = serial.Serial(port, 9600, timeout=20)
 
     if args.input:
         print("source data from jpg file")
@@ -259,14 +260,14 @@ def main(args):
             in_img = GetImageFromCamera(cap);
             diff = e2e(interpreter, in_img, time.time(), args.quan, 1, video_wtr)
             if not diff:
-                break;
+                break
 
             print("fps:", 1.0/ diff)
 
     if not args.input:
         cap.release()
         video_wtr.release()
-    cv2.destroyAllWindows()
+    # cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":

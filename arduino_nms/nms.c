@@ -4,15 +4,28 @@
 
 #include "nms.h"
 
-float cal_iou(bbx_t *bbx_a, bbx_t *bbx_b)
-{
+float cal_iou(int8_t *ptr, int i, int j)
+{ // i = a j = b
+    int8_t a_t, a_b, a_l, a_r;
+    int8_t b_t, b_b, b_l, b_r;
+    a_t = GET_BBX_TOP(ptr,i);
+    a_b = GET_BBX_BOTTOM(ptr,i);
+    a_l = GET_BBX_LEFT(ptr,i);
+    a_r = GET_BBX_RIGHT(ptr,i);
+
+    b_t = GET_BBX_TOP(ptr,j);
+    b_b = GET_BBX_BOTTOM(ptr,j);
+    b_l = GET_BBX_LEFT(ptr,j);
+    b_r = GET_BBX_RIGHT(ptr,j);
+    
     //# Overlapping width and height
-    int r = (bbx_a->r < bbx_b->r) ? bbx_a->r : bbx_b->r;
-    int l = (bbx_a->l > bbx_b->l) ? bbx_a->l : bbx_b->l;
-    int b = (bbx_a->b < bbx_b->b) ? bbx_a->b : bbx_b->b;
-    int t = (bbx_a->t > bbx_b->t) ? bbx_a->t : bbx_b->t;
-    int w = r - l;
-    int h = b - t;
+//    printf("%d %d %d %d", bbx_a->t, bbx_a->b , bbx_a->l, bbx_a->r);
+    int8_t r = (a_r < b_r) ? a_r : b_r;
+    int8_t l = (a_l > b_l) ? a_l : b_l;
+    int8_t b = (a_b < b_b) ? a_b : b_b;
+    int8_t t = (a_t > b_t) ? a_t : b_t;
+    int8_t w = r - l;
+    int8_t h = b - t;
     w = (0 > w)? 0 : w;
     h = (0 > h)? 0 : h;
 
@@ -22,20 +35,20 @@ float cal_iou(bbx_t *bbx_a, bbx_t *bbx_b)
 
     // total area of the figure formed by box a and box b
     // except for overlapping area
-    int u = (bbx_a->r - bbx_a->l) * (bbx_a->b - bbx_a->t) + \
-            (bbx_b->r - bbx_b->l) * (bbx_b->b - bbx_b->t) - area;
+    int u = (a_r - a_l) * (a_b - a_t) + \
+            (b_r - b_l) * (b_b - b_t) - area;
 
     return (u <= 0) ? 0.0f : (float)area/(float)u;
 }
 
 
-int nms(float *ptr, int valid_count)
+int nms(int8_t *ptr, int valid_count)
 {
-    float score = 0;
+    uint8_t score = 0;
     float iou = 0;
     float iou_threshold = 0.45;
-    float score_threshold = 0.7;
-    bbx_t a = {0}, b = {0};
+    uint8_t score_threshold = 64;
+//    bbx_t a = {0}, b = {0};
 
     for (int i = 0; i < valid_count; i++) {
         score = GET_SCORE(ptr, i);
@@ -44,11 +57,12 @@ int nms(float *ptr, int valid_count)
             continue;
         }
 
-        a = GET_BBX(ptr, i);
+//        a = GET_BBX(ptr, i);
         for (int j = i; j < valid_count; j++) {
             if (GET_SCORE(ptr, j) <= 0 || i == j ) continue;
-            b = GET_BBX(ptr, j);
-            iou = cal_iou(&a, &b);
+//            b = GET_BBX(ptr, j);
+            
+            iou = cal_iou(ptr, i, j);
             if (iou >= iou_threshold) GET_SCORE(ptr, j) = -1;
         }
     }
